@@ -6,9 +6,11 @@ var tileSize = 13; //40, 20, 10
 var zoom = 11.8;
 let mapOffsetX = 0;
 let mapOffsetY = 0;
+let cameraRect;
+let slicesOnScreen = [];
 const maxZoom = 120; //90
 const minZoom = 11;
-let noiseScale = 0.15;
+let noiseScale = 0.05; //0.15 или 0.03
 var heightMap = [];
 var slices = [];
 let isRenderNoise = false;
@@ -17,6 +19,7 @@ var SEED;
 function setup(){
     createCanvas(windowWidth, windowHeight);
     background(204);
+    cameraRect = {x: 0, y: 0, w: windowWidth, h: windowHeight};
 
     SEED = random() * 255;
     noiseSeed(SEED); 
@@ -24,11 +27,20 @@ function setup(){
 
     computeNoise();
     computeContours();
+    updateSlicesOnScreen();
     // computeDiagram();
     render();
 
     // console.log(isPointInRect(rectangle, pppoint));
     // console.log(checkLineIntersection(0,0,1,1,0,1,1,0));
+    let rect = [
+        {x: 1, y: 1},
+        {x: 2, y: 2},
+        {x: 2, y: 1},
+        {x: 3, y: 2},
+        {x: 2, y: 3}
+    ];
+    console.log(inside({x: 2, y: 2.5}, rect));
 }
 
 function draw(){
@@ -39,15 +51,20 @@ function render(){
     // diagram.edges.forEach(e => {
     //     line(e.va.x, e.va.y, e.vb.x, e.vb.y);
     // });
-    console.log(diagram);
-    console.log(heightMap);
+    // console.log(diagram);
+    // console.log(heightMap);
     renderContours();
     if(isRenderNoise){
         renderNoise();
     }
     // renderDiagram();
 
-
+    push();
+    strokeWeight(10);
+    stroke(255, 0, 0);
+    noFill();
+    // rect(cameraRect.x, cameraRect.y, cameraRect.w, cameraRect.h);
+    pop();
 
     
     
@@ -56,20 +73,24 @@ function render(){
     // diagram.cells.forEach(cell => {
     //     drawCastle(cell.site.x, cell.site.y);
     // });
-
 }
 
 function computeNoise(){
     {
         let i = 0;
-    do{
-        i++;
-        let y = [];
-        for (let j = 0; j < height/tileSize; j++) {
-            y.push(noise(i * noiseScale, j * noiseScale));
-        }
-        heightMap.push(y);
-    }while(i < width /tileSize);
+        do{
+            i++;
+            let y = [];
+            let j = 0;
+            do {
+                j++;
+                y.push(noise(i * noiseScale, j * noiseScale));
+            } while (j < height/tileSize);
+            // for (let j = 0; j < height/tileSize; j++) {
+            //     y.push(noise(i * noiseScale, j * noiseScale));
+            // }
+            heightMap.push(y);
+        }while(i < width /tileSize);
     }
     for (let j = 0; j < heightMap[0].length; j++) {
         heightMap[0][j] = 0;
@@ -101,33 +122,43 @@ function renderNoise(){
     for(let i = 0; i < heightMap.length; i++){
         for(let j = 0; j < heightMap[i].length; j++) {
             fill(heightMap[i][j] * 255,heightMap[i][j] * 255, heightMap[i][j] * 255, 200);
-            console.log(heightMap[i][j]);
-            rect(i * tileSize, j * tileSize, tileSize, tileSize);
+            // console.log(heightMap[i][j]);
+            rect(i * tileSize - cameraRect.x, j * tileSize - cameraRect.y, tileSize, tileSize);
         };
     };
     pop();
-    console.log("Render");
+    // console.log("Render");
 }
 
 function computeContours(){
     // xs = range(0, heightMap.length, 1);
-    console.log(heightMap.length, heightMap[0].length);
-    xs = range(0, heightMap.length - 2, 1);
-    ys = range(0, heightMap[0].length, 1);
+    // console.log(heightMap.length, heightMap[0].length);
+    xs = range(0, heightMap.length - 0, tileSize);
+    ys = range(0, heightMap[0].length - 0, tileSize); //tileSize - 13
+    console.log(heightMap[1]);
     zs = [0, 0.1, 0.2, , 0.45, 0.5, 0.73, 0.75];
-    console.log(xs, ys);
+    // console.log(xs, ys);
     let c = new Conrec();
-    c.contour(heightMap, 0, xs.length - 1, 0, ys.length - 1, xs, ys, zs.length, zs);
-    console.log(c.contourList());
+    c.contour(heightMap, 0, xs.length - 3, 0, ys.length - 0, xs, ys, zs.length, zs);
+    // console.log(c.contourList());
     slices = c.contourList();
+    // slices.forEach(slice => {
+    //     slice.forEach(vertex => {
+    //         if(vertex != slice.k || vertex != slice.level){
+    //             Math.round(vertex.x);
+    //             Math.round(vertex.y);
+    //         }
+    //     });
+    // });
 }
 
 function renderContours(){
+    // console.log(slicesOnScreen);
     background(204);
     push();
     strokeWeight(2);
-    for (let i = slices.length - 1; i >= 0; i--) {
-        const figure = slices[i];
+    for (let i = slicesOnScreen.length - 1; i >= 0; i--) {
+        const figure = slicesOnScreen[i];
         beginShape();
         switch (figure.level) {
             case 0.5:
@@ -164,11 +195,49 @@ function renderContours(){
         }
         for (let j = figure.length - 1; j >= 0; j--) {
             const path = figure[j];
-            vertex(path.x * (1 + zoom) + mapOffsetX, path.y * (1 + zoom) + mapOffsetY)
+            vertex((path.x - cameraRect.x) * (width / cameraRect.w), (path.y - cameraRect.y) * (height / cameraRect.h))
         }
         endShape(CLOSE);
     }
     pop();
+}
+
+function updateSlicesOnScreen(){
+    slicesOnScreen = [];
+    slices.forEach(slice => {
+        let isOnScreen = false;
+        for (let i = 0; i < slice.length; i++) {
+            let vertex = slice[i];
+            if(isPointInRect(cameraRect, vertex)){
+                slicesOnScreen.push(slice);
+                isOnScreen = true;
+                break;
+            }
+        }
+        // let tSlice = Object.assign({}, slice);
+        // delete tSlice.k;
+        // delete tSlice.level;
+        // let mSlice = Object.values(tSlice).map(v => Object.values(v))
+        // console.log(tSlice);
+        // console.log(slice);
+
+        if(isOnScreen == false){
+            // console.log("gjhf");
+            if(inside({x: 100, y: 100}, slice)){
+                slicesOnScreen.push(slice);
+                console.log("1");
+            } else if(inside({x: cameraRect.x + cameraRect.w, y: cameraRect.y}, slice)){
+                slicesOnScreen.push(slice);
+                console.log("2");
+            } else if(inside({x: cameraRect.x + cameraRect.w, y: cameraRect.y + cameraRect.h}, slice)){
+                slicesOnScreen.push(slice);
+                console.log("3");
+            } else if(inside({x: cameraRect.x, y: cameraRect.y + cameraRect.h}, slice)){
+                slicesOnScreen.push(slice);
+                console.log("4");
+            } 
+        }
+    });
 }
 
 function computeDiagram(){
@@ -230,6 +299,10 @@ function renderDiagram(){
 //     return cities
 // }
 
+// function updateCamera(delta){
+//     scaleRect(cameraRect, delta);
+// }
+
 function getCities(){
     cities = [];
     slices.forEach(slice => {
@@ -287,24 +360,46 @@ function drawCastle(x, y){
 // }
 
 function mouseWheel(event){
-    let oldZoom = zoom;
-    zoom += event.delta / 1000;
-    console.log(event.delta, zoom);
-    if(zoom > maxZoom){zoom = maxZoom}
-    if(zoom < minZoom){zoom = minZoom}
+    // let oldZoom = zoom;
+    // zoom += event.delta / 1000;
+    // console.log(event.delta, zoom);
+    // if(zoom > maxZoom){zoom = maxZoom}
+    // if(zoom < minZoom){zoom = minZoom}
     // if(oldZoom != zoom){
         // renderNoise();
         // render();
     // }
+    scaleRect(cameraRect, map(event.delta / 100, - 100, 100, 0, 200));
+    updateSlicesOnScreen();
+    return false;
 }
 
 function mouseDragged(){
     if(mouseIsPressed){
-    mapOffsetX += movedX;
-    mapOffsetY += movedY;
+    // mapOffsetX += movedX;
+    // mapOffsetY += movedY;
+    cameraRect.x -= movedX / (width / cameraRect.w);
+    cameraRect.y -= movedY / (height / cameraRect.h);
     // render();
     }
-    console.log(mapOffsetX);
+    // console.log(mapOffsetX);
+    updateSlicesOnScreen();
+}
+
+function scaleRect(rect, dif){
+    // if(dif > 0){
+    //     dif = 1 / dif;
+    // }
+    // rect.w = (rect.w / 100) * dif;
+    // rect.h = (rect.h / 100) * dif;
+    // rect.x += rect.w / 2;
+    // rect.y += rect.h / 2;
+    let centerX = rect.x + (rect.w / 2);
+    let centerY = rect.y + (rect.h / 2);
+    rect.w = (rect.w / 100) * dif;
+    rect.h = (rect.h / 100) * dif;
+    rect.x = centerX - (rect.w / 2);
+    rect.y = centerY - (rect.h / 2);
 }
 
 function range(from, to, dif){
@@ -322,28 +417,47 @@ function keyPressed(){
     if (keyCode == 32) {
         isRenderNoise = !isRenderNoise;
         render();
-        console.log(isRenderNoise);
+        // console.log(isRenderNoise);
     }
 }
 
-function inside(point, vs) {
-    // ray-casting algorithm based on
-    // https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html/pnpoly.html
+function windowResized(){
+    // resizeCanvas(windowWidth, windowHeight); надо заново всё пересчитывать
+}
+
+// function inside(point, vs) {
+//     // ray-casting algorithm based on
+//     // https://wrf.ecse.rpi.edu/Research/Short_Notes/pnpoly.html/pnpoly.html
     
-    var x = point[0], y = point[1];
+//     var x = point[0], y = point[1];
     
-    var inside = false;
-    for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-        var xi = vs[i][0], yi = vs[i][1];
-        var xj = vs[j][0], yj = vs[j][1];
+//     var inside = false;
+//     for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+//         var xi = vs[i][0], yi = vs[i][1];
+//         var xj = vs[j][0], yj = vs[j][1];
         
-        var intersect = ((yi > y) != (yj > y))
-            && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-    }
+//         var intersect = ((yi > y) != (yj > y))
+//             && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+//         if (intersect) inside = !inside;
+//     }
     
-    return inside;
-};
+//     return inside;
+// };
+
+function inside(point, poly){
+    let result = false;
+    // console.log(point, poly);
+    let j = poly.length - 1;
+    // console.log(j);
+    for (let i = 0; i < poly.length; i++) {
+        if ( (poly[i].y < point.y && poly[j].y >= point.y || poly[j].y < point.y && poly[i].y >= point.y) &&
+            (poly[i].x + (point.y - poly[i].y) / (poly[j].y - poly[i].y) * (poly[j].x - poly[i].x) < point.x) )
+            result = !result;
+        j = i;
+    }
+    // return true;
+    return result;
+}
 
 var rectangle = {
     x: 4,
@@ -403,6 +517,10 @@ function checkLineIntersection(line1StartX, line1StartY, line1EndX, line1EndY, l
 
     для Пангеи: 212.28649255551102
     для крутой карты: 201.99317641105995 , 247.9727420551782 , 31 , 
+    крутой материк с островами на уровне 0.5 и 0.4: 7.394503247685006
+    много островов: 240.32995906856155
+    мини-архипелаг на размере 0.03: 193.57156857683498
+    красота(0.05): 154.55169173407148
 
     TODO:
     в краях сделать интерполяцию, аппроксиматизацию, а не просто приравнять нулю;
